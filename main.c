@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <arpa/inet.h>
+
 /*
     Verify that it is a png file (header)
     Create private ancillary chunk
@@ -17,17 +19,17 @@
 const uint8_t header[] = {137, 80, 78, 71, 13, 10, 26, 10};
 const uint8_t iend_ind[] = {73, 69, 78, 68};
 
+uint32_t crc_table[256];
+
 
 void dump_png_file(FILE *file) {
     FILE *png_contents = fopen("png_dump.txt", "w");
     uint8_t *byte_section = malloc(4 * sizeof(uint8_t)); 
-    while (fread(byte_section, sizeof(uint8_t), 4, file) != NULL) {
+    while (fread(byte_section, sizeof(uint8_t), 4, file) != 0) {
         
         for (size_t i = 0; i < 4; i++) {
             fprintf(png_contents, "%d ", byte_section[i]);
         }
-        //fputs("\n", png_contents);
-
         fprintf(png_contents, "| %s\n", byte_section);
     }
     rewind(file);
@@ -36,10 +38,9 @@ void dump_png_file(FILE *file) {
 }
 
 
+
+
 void read_png_file_till_IEND(FILE *file) {
-    // if (ftell(file) != SEEK_SET) {
-    //     fseek(file, 0L, SEEK_SET);
-    // }
     uint8_t *first_8_bytes = malloc(8 * sizeof(uint8_t));
     
     assert(fread(first_8_bytes, sizeof(uint8_t), 8, file) != 0);
@@ -55,6 +56,9 @@ void read_png_file_till_IEND(FILE *file) {
 
     uint8_t *file_ptr = malloc(1 * sizeof(uint8_t));
 
+
+    // uint32_t *f_iend_length = malloc(1 * sizeof(uint32_t));
+    // uint32_t f_iend_length;
     uint8_t *file_iend = malloc(4 * sizeof(uint8_t));
     size_t fcount = 0;
     while (fread(file_ptr, sizeof(uint8_t), 1, file) != 0) {
@@ -74,6 +78,20 @@ void read_png_file_till_IEND(FILE *file) {
             fcount = 0;
         }
     }
+
+    // while (1) {
+    //     fread(&f_iend_length, sizeof(uint32_t), 1, file);
+    //     f_iend_length = ntohl(f_iend_length);
+    //     fread(f_iend, sizeof(uint8_t), 4, file);
+    //     if (memcmp(iend_ind, f_iend, 4) == 0) {
+    //         printf("Chunk: %.4s\n", f_iend);
+    //         if (fseek(file, -f_iend_length, SEEK_CUR) == -1) {
+    //             perror("fseek");
+    //             exit(1);
+    //         }
+    //         break;
+    //     }
+    // }
     if (!fcount) {
         fprintf(stderr, "IEND chunk not found\n");
         exit(1);
@@ -81,17 +99,48 @@ void read_png_file_till_IEND(FILE *file) {
     free(file_ptr);
 }
 
-void convert_to_network_order() {
-    // htons should suffice?
+
+
+void init_crc32() {
+    uint32_t crc32 = 1;
+
+    for (uint8_t i = 128; ; i >>= 1) {
+        crc32 = (crc32 >> 1) ^ (crc32 & 1 ? 0xedb88320 : 0);
+        for (uint8_t j = 0; j < 256; j += 2*i) {
+            crc_table[i+j] = crc32 ^ crc_table[j];
+        }
+    }
 }
 
-uint32_t get_chunk_crc32(uint8_t *type, 
-                        uint8_t *data, size_t data_length) {
-    // https://en.wikipedia.org/wiki/Computation_of_cyclic_redundancy_checks#CRC-32_example
+uint32_t get_chunk_crc32(uint8_t *data, size_t data_length) {
+    uint32_t crc32 = 0xFFFFFFFFu;
+    if (crc_table[255] == 0) {
+        init_crc32();
+    }
+
+    for (size_t i = 0; i < data_length; i++) {
+        crc32 ^= data[i];
+        crc32 = (crc32 >> 8) ^ crc_table[crc32 & 0xFF];
+    }
+
+    crc32 ^= 0xFFFFFFFFu;
+    return crc32;
 }
 
-void write_chunk_to_file(FILE* file, char *type_name, 
+
+
+void write_chunk_to_file(FILE* file, uint8_t type_name[4], 
                         char *data, size_t data_length) {
+    read_png_file_till_IEND(file);
+    fwrite(&data_length, 4, 1, file);
+    fwrite(&type_name, 1, 4, file);
+    fwrite(&data, 1, data_length, file);
+    uint8_t *pre_bytes = malloc(sizeof(uint8_t) * (data_length + 4) + 1);
+    pre_bytes = (uint8_t *) strcat(type_name, data);
+    uint32_t crc = get_chunk_crc32(pre_bytes, sizeof(pre_bytes));
+    fwrite(&crc, 4, 1, file);
+    
+    free(pre_bytes);
 }
 
 int main(int argc, char **argv) {
@@ -101,11 +150,18 @@ int main(int argc, char **argv) {
     }
 
     FILE *png_file;
-    png_file = fopen(argv[1], "rb");
+    png_file = fopen(argv[1], "rb+");
 
-    dump_png_file(png_file);
+    // dump_png_file(png_file);
 
-    read_png_file_till_IEND(png_file);
+    // FILE *file_wr;
+    // file_wr = fopen(argv[1], "ab+");
+    // while (fwrite()) {
+
+    // }
+    uint8_t type_name[4] = "miNe";
+    char data[] = "Whatever data";
+    write_chunk_to_file(png_file, type_name, data, 4);
 
     fclose(png_file);
     return 0;
