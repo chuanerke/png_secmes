@@ -1,0 +1,5 @@
+.vscode/
+
+*.png
+*.txt
+main.o
