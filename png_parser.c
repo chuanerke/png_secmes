@@ -19,7 +19,15 @@
 const uint8_t header[] = {137, 80, 78, 71, 13, 10, 26, 10};
 const uint8_t ihdr_ind[] = {'I', 'H', 'D', 'R'};
 
+
 uint32_t crc_table[256];
+
+struct Chunk {
+    uint32_t length; // needs to be after htonl (might change) 
+    uint8_t type[4];
+    uint8_t *data;
+    uint32_t crc;  
+};
 
 void init_crc32() {
     uint32_t crc32 = 1;
@@ -73,13 +81,27 @@ void verify_png_file(FILE *file) {
         exit(1);
     }
 
+    ihdr_len = htonl(ihdr_len);
+
+    uint8_t *ihdr_data = malloc(ihdr_len * sizeof(uint8_t));
+    assert(fread(ihdr_data, sizeof(uint8_t), ihdr_len, file) != 0);
+
+    printf("IHDR Length: %d\n", ihdr_len);
     printf("IHDR: ");
     print_each_byte(ihdr_type, 4);
+    printf("IHDR data:\n");
+    print_each_byte(ihdr_data, ihdr_len);
+    // printf("%c\n", ihdr_data);
+
+    uint32_t crc;
+    assert(fread(&crc, sizeof(uint32_t), 1, file) != 0);
+
+    printf("IHDR CRC: %d\n", crc);
 
     free(header_chunk);
     free(ihdr_type);
+    free(ihdr_data);
 }
-
 
 
 int main(int argc, char **argv) {
@@ -93,7 +115,5 @@ int main(int argc, char **argv) {
     verify_png_file(png_file);
 
     fclose(png_file);
-
-
     return 0;
 }
