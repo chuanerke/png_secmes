@@ -38,7 +38,6 @@ void dump_png_file(FILE *file) {
     FILE *png_contents = fopen("png_dump.txt", "w");
     uint8_t *byte_section = malloc(4 * sizeof(uint8_t)); 
     while (fread(byte_section, sizeof(uint8_t), 4, file) != 0) {
-        
         for (size_t i = 0; i < 4; i++) {
             fprintf(png_contents, "%d ", byte_section[i]);
         }
@@ -48,6 +47,8 @@ void dump_png_file(FILE *file) {
     fclose(png_contents);
     free(byte_section);
 }
+
+
 
 void write_png_file_till_IEND(FILE *file, FILE *w_file) {
     uint8_t *first_8_bytes = malloc(8 * sizeof(uint8_t));
@@ -118,6 +119,7 @@ void write_chunk_to_file(FILE *file, FILE *w_file, char type_name[4],
     free(pre_bytes_buf);
     (void) pre_bytes_ptr;
 }
+
 
 int main(int argc, char **argv) {
     if (argc != 2) {
