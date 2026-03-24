@@ -16,11 +16,23 @@
         Modify png data
 */
 
+/* 
+    Check & Parse chunks
+    Error-Check for valid png file:
+    1. Header -> IHDR -> IDAT -> IEND
+    2. IHDR -> PLTT
+    3. IDAT -> IDAT
+    4. Verify CRC
+    
+    Read IHDR, print metadata
+    Check and read any ancillary chunks
+*/
+
+// #define #x x 
 const uint8_t header[] = {137, 80, 78, 71, 13, 10, 26, 10};
+
+// Critical Chunks
 const uint8_t ihdr_ind[] = {'I', 'H', 'D', 'R'};
-
-
-uint32_t crc_table[256];
 
 struct Chunk {
     uint32_t length; // needs to be after htonl (might change) 
@@ -29,34 +41,69 @@ struct Chunk {
     uint32_t crc;  
 };
 
-void init_crc32() {
-    uint32_t crc32 = 1;
-    for (unsigned int i = 128; i; i >>= 1) {
-        crc32 = (crc32 >> 1) ^ (crc32 & 1 ? 0xedb88320 : 0);
-        for (unsigned int j = 0; j < 256; j += 2*i) {
-            crc_table[i+j] = crc32 ^ crc_table[j];
-        }
-    }
-}
-
-uint32_t get_chunk_crc32(uint8_t *data, size_t data_length) {
-    uint32_t crc32 = 0xFFFFFFFFu;
-    if (crc_table[255] == 0) {
-        init_crc32();
-    }
-    for (size_t i = 0; i < data_length; i++) {
-        crc32 ^= data[i];
-        crc32 = (crc32 >> 8) ^ crc_table[crc32 & 0xFF];
-    }
-    crc32 ^= 0xFFFFFFFFu;
-    return crc32;
-}
-
 void print_each_byte(uint8_t *arr, size_t len) {
     for (size_t i = 0; i < len; i++) {
         printf("%d ", arr[i]);
     }
     puts("");
+}
+
+void print_and_verify_header(FILE *file) {
+    uint8_t *header_chunk = malloc(8 * sizeof(uint8_t));
+
+    assert(fread(header_chunk, sizeof(uint8_t), 8, file) != 0);
+    if (memcmp(header, header_chunk, 8) != 0) {
+        fprintf(stderr, "PNG Header not found\n");
+        exit(1);
+    }
+
+    printf("Header: ");
+    print_each_byte(header_chunk, 8);
+
+    free(header_chunk);
+}
+
+void print_chunk(struct Chunk p_chunk) {
+    printf("Chunk: %.4s\n", p_chunk.type);
+    
+    uint32_t nt_length = htonl(p_chunk.length);
+    printf("Length: %d\n", nt_length);
+    
+    printf("Data: \n");
+    print_each_byte(p_chunk.data, nt_length);
+
+    printf("CRC: %d\n", p_chunk.crc);
+}
+
+
+void parse_chunk(FILE *file, struct Chunk *curr_chunk) {
+    size_t fr_ret;
+
+    fr_ret = fread(&curr_chunk->length, sizeof(uint32_t), 1, file);
+    if (fr_ret != 1) {
+        fprintf(stderr, "Chunk length could not be read\n");
+        exit(1);
+    }
+
+    fr_ret = fread(&curr_chunk->type, sizeof(uint8_t), 4, file);
+    if (fr_ret != 4) {
+        fprintf(stderr, "Chunk type could not be read\n");
+        exit(1);
+    }
+    
+    uint32_t nt_length = htonl(curr_chunk->length);
+    curr_chunk->data = malloc(sizeof(uint8_t) * nt_length);
+    fr_ret = fread(curr_chunk->data, sizeof(uint8_t), nt_length, file);
+    if (fr_ret != nt_length) {
+        fprintf(stderr, "Chunk length could not be read\n");
+        exit(1);
+    }
+    
+    fr_ret = fread(&curr_chunk->crc, sizeof(uint32_t), 1, file);
+    if (fr_ret != 1) {
+        fprintf(stderr, "Chunk CRC could not be read\n");
+        exit(1);
+    }
 }
 
 void verify_png_file(FILE *file) {
@@ -112,7 +159,20 @@ int main(int argc, char **argv) {
 
     FILE *png_file = fopen(argv[1], "rb");
 
-    verify_png_file(png_file);
+    // verify_png_file(png_file);
+    print_and_verify_header(png_file);
+    struct Chunk ihdr;
+    parse_chunk(png_file, &ihdr);
+    print_chunk(ihdr);
+
+    struct Chunk idat;
+    parse_chunk(png_file, &idat);
+    print_chunk(idat);
+
+    struct Chunk iend;
+    parse_chunk(png_file, &iend);
+    print_chunk(iend);
+    
 
     fclose(png_file);
     return 0;
