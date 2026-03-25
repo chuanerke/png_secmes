@@ -6,40 +6,42 @@
 
 #include <arpa/inet.h>
 
-/*
-    TODO:
-        Create chunk struct
-        Verify png file
-        Verify CRC of chunk
-        Get metadata
-        Add own chunk anywhere acceptable
-        Modify png data
-*/
-
-/* 
-    Check & Parse chunks
-    Error-Check for valid png file:
-    1. Header -> IHDR -> IDAT -> IEND
-    2. IHDR -> PLTT
-    3. IDAT -> IDAT
-    4. Verify CRC
-    
-    Read IHDR, print metadata
-    Check and read any ancillary chunks
-*/
-
-// #define #x x 
 const uint8_t header[] = {137, 80, 78, 71, 13, 10, 26, 10};
 
-// Critical Chunks
 const uint8_t ihdr_ind[] = {'I', 'H', 'D', 'R'};
+const uint8_t iend_ind[] = {'I', 'E', 'N', 'D'};
 
 struct Chunk {
-    uint32_t length; // needs to be after htonl (might change) 
+    uint32_t length;
     uint8_t type[4];
     uint8_t *data;
     uint32_t crc;  
 };
+
+struct Metadata {
+    uint32_t height;
+    uint32_t width;
+    uint8_t bit_depth;
+    uint8_t color_type;
+    uint8_t comp_method;
+    uint8_t filt_method;
+    uint8_t int_method;
+};
+
+struct File_chunks {
+    struct Chunk *chunks;
+    size_t count;
+    size_t capacity;
+};
+
+#define fc_append(xs, x)\
+    do {\
+        if (xs->count >= xs->capacity) {\
+            if (xs->capacity == 0) xs->capacity = 3; else xs->capacity *= 2;\
+            xs->chunks = realloc(xs->chunks, xs->capacity*(sizeof(struct Chunk)));\
+        }\
+        xs->chunks[xs->count++] = x;\
+    } while(0)
 
 void print_each_byte(uint8_t *arr, size_t len) {
     for (size_t i = 0; i < len; i++) {
@@ -69,10 +71,7 @@ void print_chunk(struct Chunk p_chunk) {
     uint32_t nt_length = htonl(p_chunk.length);
     printf("Length: %d\n", nt_length);
     
-    printf("Data: \n");
-    print_each_byte(p_chunk.data, nt_length);
-
-    printf("CRC: %d\n", p_chunk.crc);
+    printf("CRC: %d\n", htonl(p_chunk.crc));
 }
 
 
@@ -103,6 +102,15 @@ void parse_chunk(FILE *file, struct Chunk *curr_chunk) {
     if (fr_ret != 1) {
         fprintf(stderr, "Chunk CRC could not be read\n");
         exit(1);
+    }
+}
+
+void add_file_chunks(FILE *file, struct File_chunks *chunks) {
+    while (1) {
+        struct Chunk temp;
+        parse_chunk(file, &temp);
+        fc_append(chunks, temp);
+        if (memcmp(iend_ind, temp.type, 4) == 0) return;
     }
 }
 
@@ -138,8 +146,7 @@ void verify_png_file(FILE *file) {
     print_each_byte(ihdr_type, 4);
     printf("IHDR data:\n");
     print_each_byte(ihdr_data, ihdr_len);
-    // printf("%c\n", ihdr_data);
-
+    
     uint32_t crc;
     assert(fread(&crc, sizeof(uint32_t), 1, file) != 0);
 
@@ -150,6 +157,38 @@ void verify_png_file(FILE *file) {
     free(ihdr_data);
 }
 
+void get_metadata_from_ihdr(struct Chunk ihdr, struct Metadata *metadata) {
+    metadata->height = ihdr.data[0] | (ihdr.data[1] << 8) | 
+                    (ihdr.data[2] << 16) | (ihdr.data[3] << 24);
+    metadata->width = ihdr.data[4] | (ihdr.data[5] << 8) | 
+                    (ihdr.data[6] << 16) | (ihdr.data[7] << 24);
+
+    metadata->height = ntohl(metadata->height);
+    metadata->width = ntohl(metadata->width);
+
+    metadata->bit_depth = ihdr.data[8];
+    metadata->color_type = ihdr.data[9];
+
+    metadata->comp_method = ihdr.data[10];
+    metadata->filt_method = ihdr.data[11];
+    metadata->int_method = ihdr.data[12];
+}
+
+void print_metadata(struct Metadata metadata) {
+    printf("File metadata:\n");
+
+    printf("Resolution: %d x %d\n", metadata.height, metadata.width);
+    printf("Bit depth: %d\n", metadata.bit_depth);
+    printf("Color type: %d\n", metadata.color_type);
+    printf("Compression method: ");
+    !(metadata.comp_method) ? printf("Deflate/Inflate Compression\n") : printf("Unknown\n");
+
+    printf("Filter method: ");
+    !(metadata.filt_method) ? printf("Adaptive filtering\n") : printf("Unknown\n");
+
+    printf("Interlace method: ");
+    !(metadata.int_method) ? printf("No interlace\n") : printf("Adam7 interlace\n");
+}
 
 int main(int argc, char **argv) {
     if (argc < 1) {
@@ -159,21 +198,22 @@ int main(int argc, char **argv) {
 
     FILE *png_file = fopen(argv[1], "rb");
 
-    // verify_png_file(png_file);
+    struct File_chunks file_data;
+
     print_and_verify_header(png_file);
-    struct Chunk ihdr;
-    parse_chunk(png_file, &ihdr);
-    print_chunk(ihdr);
+    add_file_chunks(png_file, &file_data);
 
-    struct Chunk idat;
-    parse_chunk(png_file, &idat);
-    print_chunk(idat);
+    struct Metadata metadata;
 
-    struct Chunk iend;
-    parse_chunk(png_file, &iend);
-    print_chunk(iend);
-    
-
+    uint8_t temp_type[4];
+    for (size_t count = 0; memcmp(iend_ind, temp_type, 4) != 0; count++) {
+        memcpy(temp_type, file_data.chunks[count].type, 4);
+        print_chunk(file_data.chunks[count]);
+        if (memcmp(ihdr_ind, temp_type, 4) == 0) {
+            get_metadata_from_ihdr(file_data.chunks[count], &metadata);
+            print_metadata(metadata);
+        }
+    }
     fclose(png_file);
     return 0;
 }

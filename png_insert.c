@@ -49,7 +49,6 @@ void dump_png_file(FILE *file) {
 }
 
 
-
 void write_png_file_till_IEND(FILE *file, FILE *w_file) {
     uint8_t *first_8_bytes = malloc(8 * sizeof(uint8_t));
 
