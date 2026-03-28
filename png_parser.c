@@ -7,6 +7,8 @@
 
 #include <arpa/inet.h>
 
+/* TODO: LSB Stegnography */
+
 const uint8_t header[] = {137, 80, 78, 71, 13, 10, 26, 10};
 
 const uint8_t ihdr_ind[] = {'I', 'H', 'D', 'R'};
@@ -277,7 +279,6 @@ void print_file_chunks(struct File_chunks *file_data, struct Metadata *metadata)
             print_metadata(*metadata);
         }
         print_chunk(file_data->chunks[count]);
-
     }
 }
 
@@ -287,7 +288,6 @@ void write_chunk_to_file(struct Chunk chunk, FILE *w_file) {
     fwrite(chunk.data, 1, htonl(chunk.length), w_file);
     fwrite(&(chunk.crc), 4, 1, w_file);
 }
-
 
 void write_user_chunk_to_file(struct File_chunks *fchunks, FILE *w_file, char type_name[4],
                         char *data, size_t data_length) {
@@ -317,7 +317,6 @@ void write_user_chunk_to_file(struct File_chunks *fchunks, FILE *w_file, char ty
     (void) pre_bytes_ptr;
 }
 
-
 static struct argp argp = { options, parse_opt, args_doc, doc };
 
 int main(int argc, char **argv) {
@@ -337,8 +336,6 @@ int main(int argc, char **argv) {
     print_and_verify_header(png_file);
     add_file_chunks(png_file, file_data);
     struct Metadata metadata;
-
-
 
     if (arguments.print == 1) {
         if (!arguments.chunk) {
