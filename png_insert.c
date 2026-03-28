@@ -41,7 +41,7 @@ void dump_png_file(FILE *file) {
         for (size_t i = 0; i < 4; i++) {
             fprintf(png_contents, "%d ", byte_section[i]);
         }
-        fprintf(png_contents, "| %s\n", byte_section);
+        fprintf("\n");
     }
     rewind(file);
     fclose(png_contents);
