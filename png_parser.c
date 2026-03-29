@@ -291,6 +291,8 @@ void write_chunk_to_file(struct Chunk chunk, FILE *w_file) {
 
 void write_user_chunk_to_file(struct File_chunks *fchunks, FILE *w_file, char type_name[4],
                         char *data, size_t data_length) {
+    fwrite(&header, 1, 8, w_file);
+    
     uint8_t temp_type[4];
     for (size_t count = 0; memcmp(iend_ind, temp_type, 4) != 0; count++) {
         memcpy(temp_type, fchunks->chunks[count].type, 4);
